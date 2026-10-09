@@ -1,0 +1,68 @@
+# 生产栈：只有本项目的 API 与计费投递 worker 两个容器，数据库用共享 MySQL 里的独立库。
+#
+# 只在服务器上用，由 deploy/deploy.sh 驱动：它设置 AI_API_IMAGE 为本次提交 SHA 标记的镜像。
+# 其余变量从服务器上本目录的 .env 读（模板见 .env.example），不进仓库；缺任何一项直接报错，
+# 不会悄悄回落到镜像里的 SQLite。设计见 docs/DEPLOYMENT.md。
+#
+# 只在内网访问：只挂 data_net，不挂 proxy_net、不发布端口。同一网络上的调用方用 http://ai_api:8010。
+# 服务名带 ai_api 前缀：compose 把服务名注册成共享网络上的 DNS 别名，避免和别的项目撞名。
+
+name: acuven_ai_api
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-environment: &environment
+  AI_API_DATABASE_URL: ${AI_API_DATABASE_URL:?set AI_API_DATABASE_URL in .env (see .env.example)}
+  AI_API_CLIENTS_JSON: ${AI_API_CLIENTS_JSON:?set AI_API_CLIENTS_JSON in .env (see .env.example)}
+  AI_API_ANTHROPIC_KEY: ${AI_API_ANTHROPIC_KEY:?set AI_API_ANTHROPIC_KEY in .env (see .env.example)}
+  AI_API_ANTHROPIC_MODEL: ${AI_API_ANTHROPIC_MODEL:?set AI_API_ANTHROPIC_MODEL in .env (see .env.example)}
+  AI_API_BILLING_BASE_URL: ${AI_API_BILLING_BASE_URL:?set AI_API_BILLING_BASE_URL in .env (see .env.example)}
+
+services:
+  ai_api:
+    # 不给默认值：没经 deploy/deploy.sh 指定镜像时直接报错，不会起一个不知道是哪个提交的版本。
+    image: ${AI_API_IMAGE:?set by deploy/deploy.sh to the commit-tagged image}
+    restart: unless-stopped
+    logging: *logging
+    mem_limit: 256m
+    environment: *environment
+    networks: [data_net]
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request as u,sys; sys.exit(0 if u.urlopen('http://127.0.0.1:8010/health', timeout=3).status==200 else 1)"
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  ai_api_worker:
+    image: ${AI_API_IMAGE:?set by deploy/deploy.sh to the commit-tagged image}
+    command: ["python", "-m", "app.worker"]
+    restart: unless-stopped
+    logging: *logging
+    mem_limit: 128m
+    environment: *environment
+    networks: [data_net]
+    # 心跳文件与 app/worker.py 的 HEARTBEAT_PATH 相同：每轮循环更新，超过 180 秒未更新即不健康。
+    # 数据库异常会让进程退出、由 restart 拉起，期间心跳停更。
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import os,sys,time; p='/tmp/acuven_ai_api_worker_heartbeat'; sys.exit(0 if os.path.exists(p) and time.time()-os.path.getmtime(p) < 180 else 1)"
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+networks:
+  data_net:
+    external: true

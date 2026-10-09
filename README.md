@@ -4,7 +4,7 @@
 
 ## 当前接口
 
-- `GET /health`
+- `GET /health`：返回 `status` 与镜像构建时注入的提交 SHA（`version`）。
 - `POST /v1/capabilities/{capability}`：服务端凭据鉴权，基于最小化的业务上下文生成只读文本。
 
 已定义的能力：`crm.contact_summary`、`erp.document_summary`、`shop.order_summary`、`inventory.stock_explanation`、`pos.sale_summary`。每个客户端只可调用配置里授权的能力。AI 不直接连接业务数据库，不执行退款、改价、调库存或其他业务写入。
@@ -26,7 +26,9 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m app.worker
 ```
 
-同一个 `Dockerfile` 可分别运行 API（默认命令）与 worker（覆盖命令为 `python -m app.worker`）。容器部署应配置独立 MySQL 数据库及上述环境变量；本地 SQLite 文件方案仅供演示，不能直接用于多副本服务。
+同一个 `Dockerfile` 可分别运行 API（默认命令）与 worker（覆盖命令为 `python -m app.worker`）。容器部署应配置独立 MySQL 数据库及上述环境变量；本地 SQLite 文件方案仅供演示，不能直接用于多副本服务。生产部署见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)：合并到 `main` 后按提交 SHA 部署。
+
+测试默认用 SQLite；设 `AI_API_TEST_DATABASE_URL`（例如一次性 MySQL 8.0 库）即改用该库，每个测试开始时清空本项目的表。
 
 先配置 `.env.example` 所列环境变量；程序不会自动读取 `.env`。`AI_API_CLIENTS_JSON` 为服务端 JSON 配置，包含模块客户端的 SHA-256 token 摘要、租户与 `ai_billing_hub` 分配的项目、凭据和能力范围。真实凭据只放运行环境，不写入 Git。用 `python -c "import hashlib; print(hashlib.sha256(b'YOUR_RANDOM_TOKEN').hexdigest())"` 计算示例格式，实际 token 应由安全随机数生成。每个租户的计费凭据须与配置中的 `tenant_id`、`billing_project_id` 绑定一致。每次调用模型前实时查询 `ai_billing_hub` 的 `effective-status`：明确返回 `BLOCK_AI` 时拒绝（403）；查询失败或应答无法校验时照常放行（不变量 1：中心计费故障不得中断客户 AI 服务），用量仍写本地 outbox，恢复后补送。
 

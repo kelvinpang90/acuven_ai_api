@@ -40,7 +40,7 @@ VPS 上部署目录里的 `.env`（`chmod 600`，不进仓库，由 Kelvin 写�
 
 - 用 `vps_infra/scripts/provision-project.sh acuven_ai_api <redis起始号>` 建库 `acuven_ai_api` 和用户 `acuven_ai_api_app`。本项目不用 Redis，但脚本必须传这个参数，它只打印、不分配；脚本打印的是 `aiomysql` 连接串，本项目用同步的 `pymysql`，按上表改写。
 - **表结构（已定）**：试点沿用启动时的 `create_all`，它只会建表、不会改表；试点只有 `usage_outbox` 一张表。**任何表结构变更之前先引入 Alembic**，以 `stamp` 对齐已有表，`deploy/deploy.sh` 届时加迁移步骤；这条变更本身需单独评审。
-- **MySQL 兼容（已定）**：现有测试只跑 SQLite。`DateTime(timezone=True)` 在 MySQL 是不带时区的 `DATETIME`；共享 MySQL 的会话时区是 `+00:00`、代码全用 UTC，按理可用，但未验证。CI 加一个 `mysql:8.0` 服务容器的 job `tests-mysql`，用同一套测试跑一遍（测试读 `AI_API_TEST_DATABASE_URL`，缺省仍用 SQLite）。Kelvin 在 GitHub 分支保护里把 `tests-mysql` 加为 `main` 的必需检查（与现有 `tests` 并列）。
+- **MySQL 兼容（已定）**：现有测试只跑 SQLite。`DateTime(timezone=True)` 在 MySQL 是不带时区的 `DATETIME`；共享 MySQL 的会话时区是 `+00:00`、代码全用 UTC，按理可用，但未验证。CI 加一个 `mysql:8.0` 服务容器的 job `tests-mysql`，用同一套测试跑一遍（测试读 `AI_API_TEST_DATABASE_URL`，缺省仍用 SQLite）。Kelvin 在 GitHub 分支保护里把 `tests-mysql` 加为 `main` 的必需检查（与现有 `tests` 并列）。2026-10-09 用本机 MySQL 8.0 实测：默认 `DATETIME` 只到秒且四舍五入，到期时间为「现在」的行可能被舍入到未来、当轮领取不到（测试 3 次失败 2 次）；因此 `next_attempt_at` 在 MySQL 上用 `DATETIME(6)`（生产库尚未建表，不属于对已有表的变更）。
 
 ## 镜像与健康检查
 
@@ -71,13 +71,15 @@ VPS 上部署目录里的 `.env`（`chmod 600`，不进仓库，由 Kelvin 写�
 2. 运行建库脚本，记下数据库密码。
 3. 写 `.env`，`chmod 600`。
 4. 在 GitHub 配齐 secrets。
-5. 在 Actions 里手工触发一次部署（填 `main` 当前的完整 SHA），确认 `build`、`deploy` 都成功。
+5. 合并部署 PR 会自动触发首次部署。1–4 步在合并前做完，这次就应成功；没做完则这次失败是预期的，做完后在 Actions 里手工触发一次部署（填 `main` 当前的完整 SHA），确认 `build`、`deploy` 都成功。
 
-**手工重建容器**（改了 `.env` 之后）：compose 要求指定镜像，用当前正在运行的那个：
+**手工执行 compose 命令之前**：compose 文件要求 `AI_API_IMAGE`，没设时连 `docker compose ps` 都会报错。在部署目录里先设为正在运行的镜像：
 
 ```bash
-AI_API_IMAGE="$(docker compose ps --format '{{.Image}}' ai_api)" docker compose up -d --force-recreate
+export AI_API_IMAGE="$(docker inspect --format '{{.Config.Image}}' acuven_ai_api-ai_api-1)"
 ```
+
+**手工重建容器**（改了 `.env` 之后）：设好上面的变量后 `docker compose up -d --force-recreate`。
 
 **试点调用**：在 `ai_api` 容器内用 Python 请求 `http://127.0.0.1:8010/v1/capabilities/crm.contact_summary`，带客户端 token。token 由 Kelvin 持有，不进命令历史、不进仓库。
 
@@ -102,6 +104,6 @@ AI_API_IMAGE="$(docker compose ps --format '{{.Image}}' ai_api)" docker compose 
 ## 实施（批准后，一个分支一个 PR）
 
 - 代码：`/health` 返回 SHA、worker 心跳、`Dockerfile` 的 `GIT_SHA`、测试可切换数据库、`tests-mysql` CI job。
-- 部署：`deploy/` 下的 compose 与 `deploy.sh`、`.github/workflows/deploy.yml`、`.env.example` 更新。
+- 部署：`docker-compose.yml`、`deploy/deploy.sh`、`.github/workflows/deploy.yml`、`.env.example` 更新。
 - OpenClaw 接手准备：`.platform/` 三个文件、planning-v1，以及供 Worker 沙箱用的纯逻辑测试（不依赖 `TestClient`）。
 - 合并即触发首次生产部署。合并前确认 secrets 已配、VPS 上 `.env` 已就绪；否则首次部署失败是预期的。

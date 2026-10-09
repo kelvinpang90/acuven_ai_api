@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -11,6 +9,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from app.billing_rules import canonical_request, error_outcome, receipt_acknowledges, sign, status_allows_ai
 from app.config import ClientBinding
 from app.ids import new_ulid
 from app.provider import Generation
@@ -50,12 +49,7 @@ def signed_headers(
     method: str = "POST",
     path: str = INGEST_PATH,
 ) -> dict[str, str]:
-    canonical = "\n".join(
-        (method, path, timestamp, attempt_id, hashlib.sha256(body).hexdigest())
-    )
-    signature = hmac.new(
-        binding.billing_secret.encode("utf-8"), canonical.encode("utf-8"), hashlib.sha256
-    ).hexdigest()
+    signature = sign(binding.billing_secret, canonical_request(method, path, timestamp, attempt_id, body))
     return {
         "X-Acuven-Api-Key": binding.billing_api_key,
         "X-Acuven-Key-Version": str(binding.billing_key_version),
@@ -98,15 +92,7 @@ class BillingClient:
                 response = client.get(self.base_url + STATUS_PATH, headers=headers)
             if response.status_code != 200:
                 raise BillingStatusUnavailable
-            data = response.json()["data"]
-            if (
-                data["tenant_id"] != binding.tenant_id
-                or data["project_id"] != binding.billing_project_id
-                or data["effective_status"] not in {"ALLOW_AI", "BLOCK_AI"}
-                or not isinstance(data["status_version"], int)
-            ):
-                raise BillingStatusUnavailable
-            return data["effective_status"] == "ALLOW_AI"
+            return status_allows_ai(response.json()["data"], binding.tenant_id, binding.billing_project_id)
         except (httpx.RequestError, ValueError, TypeError, KeyError) as error:
             raise BillingStatusUnavailable from error
 
@@ -129,25 +115,16 @@ class BillingClient:
                 response = client.post(self.base_url + INGEST_PATH, headers=headers, content=body)
         except httpx.RequestError:
             return DeliveryResult(False, True, "NETWORK_ERROR")
-        if response.status_code in {200, 202}:
-            try:
-                receipt = response.json()["data"]
-                expected_statuses = {202: {"accepted"}, 200: {"already_received", "already_processed"}}
-                if receipt["event_id"] == event_id and receipt["status"] in expected_statuses[response.status_code]:
-                    return DeliveryResult(True, False)
-            except (ValueError, KeyError, TypeError):
-                pass
-            return DeliveryResult(False, True, "INVALID_BILLING_RECEIPT")
         try:
-            data = response.json()
-            code = data.get("error", {}).get("code", "BILLING_ERROR")
-            retryable = data.get("retryable")
-        except (ValueError, AttributeError, TypeError):
-            code, retryable = "INVALID_BILLING_RESPONSE", None
-        if not isinstance(code, str):
-            code = "BILLING_ERROR"
-        # Only the billing server's explicit retryable flag authorizes a retry.
-        return DeliveryResult(False, retryable is True, code[:64])
+            document = response.json()
+        except ValueError:
+            document = None
+        if response.status_code in {200, 202}:
+            if receipt_acknowledges(response.status_code, document, event_id):
+                return DeliveryResult(True, False)
+            return DeliveryResult(False, True, "INVALID_BILLING_RECEIPT")
+        code, retryable = error_outcome(document)
+        return DeliveryResult(False, retryable, code)
 
 
 def payload_json(payload: dict) -> str:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException
@@ -37,11 +38,13 @@ def create_app(
     provider = provider or AnthropicProvider(settings.anthropic_key, settings.anthropic_model)
     billing = billing or (BillingClient(settings.billing_base_url) if settings.billing_base_url else None)
     sessions = create_session_factory(settings.database_url)
+    # Baked into the image at build time; the deploy workflow checks it to prove which commit is live.
+    version = os.environ.get("AI_API_GIT_SHA", "unknown")
     api = FastAPI(title="Acuven AI API", version="0.1.0")
 
     @api.get("/health")
     def health() -> dict[str, str]:
-        return {"status": "ok"}
+        return {"status": "ok", "version": version}
 
     @api.post("/v1/capabilities/{capability}", response_model=CapabilityResponse)
     def invoke(
