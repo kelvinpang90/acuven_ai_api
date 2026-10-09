@@ -38,7 +38,7 @@
 
 **现状（代码已实现）：**`app/billing.py:BillingClient.send` 每次尝试用新 `X-Acuven-Request-Id` 对**原始 body**签名，`event_id` 与 body 不变。只把 `event_id` 匹配的 202 `accepted`、200 `already_received`／`already_processed` 判送达；网络失败可重试，服务端错误只按顶层 `retryable=true` 重试。`app/worker.py:deliver_one` 当前指数退避封顶 1 小时，无最大次数或抖动。
 
-**缺口或提议：**两条试点路径都验证离线时用量留在本地、恢复后补投积压；离线只在 AI API 一侧模拟：临时把其运行环境的计费地址指向不可达地址，或在 AI API 容器层阻断出站，验证后恢复配置，不得停止、重启或改动生产 Billing Hub。`PREPAID` 路径以同一 `event_id` 重投验证钱包只扣一次；内部路径核对合法重复回执，worker 日志须能显示 `DEAD`。正式多租户阶段再定抖动、最大次数及可审计重投。202 只证明 Billing Hub 持久接收为 `RECEIVED`，不证明最终计价；不能因 HTTP 码自行覆盖 `retryable` 契约。
+**缺口或提议：**两条试点路径都验证离线时用量留在本地、恢复后补投积压；离线只在 AI API 一侧模拟：临时把其运行环境的计费地址指向不可达地址，验证后恢复配置（不用容器层阻断出站：模型调用与计费走同一出站，会一并断开，见 [DEPLOYMENT.md](DEPLOYMENT.md#离线演练)），不得停止、重启或改动生产 Billing Hub。`PREPAID` 路径以同一 `event_id` 重投验证钱包只扣一次；内部路径核对合法重复回执，worker 日志须能显示 `DEAD`。正式多租户阶段再定抖动、最大次数及可审计重投。202 只证明 Billing Hub 持久接收为 `RECEIVED`，不证明最终计价；不能因 HTTP 码自行覆盖 `retryable` 契约。
 
 ## 5a. 摄取后的计价核对
 
@@ -103,7 +103,7 @@
 | 验证层 | 必需证据 |
 | --- | --- |
 | 纯逻辑（不启动 asyncio／`TestClient`，可在 Worker 沙箱） | 签名规范串、ULID 与四类 token 校验、回执 `event_id` 匹配、`retryable` 分支、租户／项目归属及严格整数 `status_version`（布尔值无效）；正式阶段再测幂等键作用域／哈希冲突分支。 |
-| CI／受控联调 | 内部计量：真实模型和 HMAC、离线回复及本地积压与补投、后台成本／参考价／实扣 0、经校验 `BLOCK_AI` 拦截而查询故障放行、`DEAD > 0` 可发现。`PREPAID`：独立绑定和凭据、同样的离线／补投链路、同事件钱包只扣一次、余额停机拦调用、复机恢复、停机余额及透支额观测。两路离线测试只临时改变 AI API 侧计费地址或容器出站，随后恢复；不得停止、重启或改动生产 Billing Hub。正式档另验 MySQL 多 worker、请求级幂等、429、未知用量、自动计价核对、清理与可审计死信重投。`TestClient`、asyncio、数据库并发和真实外部调用只放 CI／受控环境。 |
+| CI／受控联调 | 内部计量：真实模型和 HMAC、离线回复及本地积压与补投、后台成本／参考价／实扣 0、经校验 `BLOCK_AI` 拦截而查询故障放行、`DEAD > 0` 可发现。`PREPAID`：独立绑定和凭据、同样的离线／补投链路、同事件钱包只扣一次、余额停机拦调用、复机恢复、停机余额及透支额观测。两路离线测试只临时改变 AI API 侧计费地址，随后恢复；不得停止、重启或改动生产 Billing Hub。正式档另验 MySQL 多 worker、请求级幂等、429、未知用量、自动计价核对、清理与可审计死信重投。`TestClient`、asyncio、数据库并发和真实外部调用只放 CI／受控环境。 |
 
 ## 冲突与差异
 
@@ -120,7 +120,8 @@
 2. Kelvin 在 Billing Hub 创建 `PREPAID` 测试租户和项目，并签发独立凭据。
 3. Billing Hub 配好 Anthropic 模型目录、`LLM_TOKEN` 供应商价格和参考客户售价；否则第一笔用量会报 `MODEL_UNKNOWN` 或 `PRICING_ERROR`。这是 Billing Hub 侧准备，不是本项目的设计待决项。
 4. 部署：GitHub 公开仓库已建（2026-10-09）；已定直接使用部署工作流，合并到 `main` 后按提交 SHA 部署，并使用 VPS 共享 MySQL 中的独立库。部署设计和工作流另行完成，不在本文展开。
-5. 在 VPS 运行环境配置两个独立客户端绑定，启动 API 和 worker。
+5. Kelvin 准备 Anthropic API key，只放 VPS 运行环境；所用模型须已在 Billing Hub 模型目录中。
+6. 在 VPS 运行环境配置两个独立客户端绑定，启动 API 和 worker（步骤见 [DEPLOYMENT.md](DEPLOYMENT.md)）。
 
 Billing Hub 的目录／价格、ADMIN 权限及中心告警属跨项目准备，不列入本项目设计待决项。
 
