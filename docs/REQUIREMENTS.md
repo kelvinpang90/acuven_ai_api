@@ -26,7 +26,7 @@
 
 ## 第一批能力：`crm.contact_summary`
 
-**目标契约 v1（待批准、未实现）：**沿用 `POST /v1/capabilities/crm.contact_summary`，请求顶层只收下表字段。CRM 负责 `contact_snapshot` 内部业务字段及版本；AI API 验证获准结构和大小，不替 CRM 决定是否传完整业务记录。2026-10-09 Kelvin 决定第一轮可用 CRM 真实客户数据、发送字段不设限制（见下文「第一轮 CRM 接入决定」）；对外部客户租户开放前的个人数据审查仍列在「正式多租户」档。
+**目标契约 v1 定稿见 [CONTACT_SUMMARY_V1.md](CONTACT_SUMMARY_V1.md)（待批准、未实现），以下为底稿：**沿用 `POST /v1/capabilities/crm.contact_summary`，请求顶层只收下表字段。CRM 负责 `contact_snapshot` 内部业务字段及版本；AI API 验证获准结构和大小，不替 CRM 决定是否传完整业务记录。2026-10-09 Kelvin 决定第一轮可用 CRM 真实客户数据、发送字段不设限制（见下文「第一轮 CRM 接入决定」）；对外部客户租户开放前的个人数据审查仍列在「正式多租户」档。
 
 | 输入字段 | 规则 |
 | --- | --- |
