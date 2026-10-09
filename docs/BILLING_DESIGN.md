@@ -1,6 +1,6 @@
-# AI API 计费设计（待 Kelvin 批准）
+# AI API 计费设计（2026-10-09 Kelvin 批准）
 
-只供评审，不授权改代码、配置或接生产计费。Billing Hub 事实以只读的 `origin/main`（本次核对提交 `02fd13b75507338dad40713f2d7cc9ceb524a950`）为准。其 `docs/TODO.md` 和 PR 237 已将 `acuven_ai_api` 定为第 3 阶段第一条真实计费链路；`docs/api.md` 经 PR 238 修正后，与 `REQ-AVAIL-001` 的查询故障放行规则一致。
+设计已批准，但真实计费联调仍须满足下文「联调前置」各项，本文不授权部署。Billing Hub 事实以只读的 `origin/main`（本次核对提交 `02fd13b75507338dad40713f2d7cc9ceb524a950`）为准。其 `docs/TODO.md` 和 PR 237 已将 `acuven_ai_api` 定为第 3 阶段第一条真实计费链路；`docs/api.md` 经 PR 238 修正后，与 `REQ-AVAIL-001` 的查询故障放行规则一致。
 
 ## 1. 调用前：有效状态
 
@@ -38,7 +38,7 @@
 
 **现状（代码已实现）：**`app/billing.py:BillingClient.send` 每次尝试用新 `X-Acuven-Request-Id` 对**原始 body**签名，`event_id` 与 body 不变。只把 `event_id` 匹配的 202 `accepted`、200 `already_received`／`already_processed` 判送达；网络失败可重试，服务端错误只按顶层 `retryable=true` 重试。`app/worker.py:deliver_one` 当前指数退避封顶 1 小时，无最大次数或抖动。
 
-**缺口或提议：**两条试点路径都验证离线时用量留在本地、恢复后补投积压；`PREPAID` 路径以同一 `event_id` 重投验证钱包只扣一次。内部路径也核对合法重复回执，worker 日志须能显示 `DEAD`。正式多租户阶段再定抖动、最大次数及可审计重投。202 只证明 Billing Hub 持久接收为 `RECEIVED`，不证明最终计价；不能因 HTTP 码自行覆盖 `retryable` 契约。
+**缺口或提议：**两条试点路径都验证离线时用量留在本地、恢复后补投积压；离线只在 AI API 一侧模拟：临时把其运行环境的计费地址指向不可达地址，或在 AI API 容器层阻断出站，验证后恢复配置，不得停止、重启或改动生产 Billing Hub。`PREPAID` 路径以同一 `event_id` 重投验证钱包只扣一次；内部路径核对合法重复回执，worker 日志须能显示 `DEAD`。正式多租户阶段再定抖动、最大次数及可审计重投。202 只证明 Billing Hub 持久接收为 `RECEIVED`，不证明最终计价；不能因 HTTP 码自行覆盖 `retryable` 契约。
 
 ## 5a. 摄取后的计价核对
 
@@ -74,7 +74,7 @@
 
 **现状（代码已实现）：**`app/config.py:Settings.from_env` 支持按多个 `client_id` 配置独立租户／项目凭据，`app/billing.py:usage_payload` 不决定钱包扣费。尚未配置或真实联调第二个客户端绑定。
 
-**缺口或提议：**Kelvin 在 Billing Hub 创建测试租户、项目并签发独立凭据。本项目按独立绑定走同一实时状态查询、模型与 outbox 链路；Billing Hub 离线仍回复且积压用量，恢复后补投。用同一事件重投证明钱包只扣一次；余额停机经校验的 `BLOCK_AI` 拦新调用、复机经校验的 `ALLOW_AI` 恢复。Billing Hub 侧记录每次停机余额及透支额供 ADR-0010 评估。两路均通过才算第 3 阶段试点成功。
+**缺口或提议：**Kelvin 在 Billing Hub 创建测试租户、项目并签发独立凭据。本项目按独立绑定走同一实时状态查询、模型与 outbox 链路；按第 5 节的 AI API 单侧断联方法验证离线回复、积压用量和恢复补投，不动生产 Billing Hub。用同一事件重投证明钱包只扣一次；余额停机经校验的 `BLOCK_AI` 拦新调用、复机经校验的 `ALLOW_AI` 恢复。Billing Hub 侧记录每次停机余额及透支额供 ADR-0010 评估。两路均通过才算第 3 阶段试点成功。
 
 ## 9. 失败矩阵
 
@@ -85,7 +85,7 @@
 | 情形 | HTTP | 用量结果 |
 | --- | --- | --- |
 | 归属正确的 `BLOCK_AI` | 当前／目标 403 | 不调模型，无事件 |
-| 状态查询失败或应答无法校验 | 当前／目标：模型及 outbox 成功则 200 | 两条试点路径均放行，用量入本地 outbox |
+| 状态查询失败或应答无法校验（离线演练在 AI API 单侧进行） | 当前／目标：模型及 outbox 成功则 200 | 两条试点路径均放行、用量入本地 outbox；验证后恢复 AI API 配置，不动生产 Billing Hub |
 | 模型失败／超时 | 当前 502 | 无可读 usage 时无事件；正式阶段核查未知用量 |
 | 模型成功而 outbox 提交失败 | 当前 503 | 不回正文；可能有供应商费用，正式阶段对账 |
 | 已入 outbox、投递失败 | AI 请求已 200 | 重试或 `DEAD`；内部联调用日志人工发现 |
@@ -103,7 +103,7 @@
 | 验证层 | 必需证据 |
 | --- | --- |
 | 纯逻辑（不启动 asyncio／`TestClient`，可在 Worker 沙箱） | 签名规范串、ULID 与四类 token 校验、回执 `event_id` 匹配、`retryable` 分支、租户／项目归属及严格整数 `status_version`（布尔值无效）；正式阶段再测幂等键作用域／哈希冲突分支。 |
-| CI／受控联调 | 内部计量：真实模型和 HMAC、离线回复及本地积压与补投、后台成本／参考价／实扣 0、经校验 `BLOCK_AI` 拦截而查询故障放行、`DEAD > 0` 可发现。`PREPAID`：独立绑定和凭据、同样的离线／补投链路、同事件钱包只扣一次、余额停机拦调用、复机恢复、停机余额及透支额观测。正式档另验 MySQL 多 worker、请求级幂等、429、未知用量、自动计价核对、清理与可审计死信重投。`TestClient`、asyncio、数据库并发和真实外部调用只放 CI／受控环境。 |
+| CI／受控联调 | 内部计量：真实模型和 HMAC、离线回复及本地积压与补投、后台成本／参考价／实扣 0、经校验 `BLOCK_AI` 拦截而查询故障放行、`DEAD > 0` 可发现。`PREPAID`：独立绑定和凭据、同样的离线／补投链路、同事件钱包只扣一次、余额停机拦调用、复机恢复、停机余额及透支额观测。两路离线测试只临时改变 AI API 侧计费地址或容器出站，随后恢复；不得停止、重启或改动生产 Billing Hub。正式档另验 MySQL 多 worker、请求级幂等、429、未知用量、自动计价核对、清理与可审计死信重投。`TestClient`、asyncio、数据库并发和真实外部调用只放 CI／受控环境。 |
 
 ## 冲突与差异
 
@@ -114,12 +114,13 @@
 
 ## 待 Kelvin 决定
 
-### 卡住内部计量联调
+### 联调前置（已定、未完成）
 
-没有新的设计待决；以下是已定但未完成的执行前置：
-
-1. Kelvin 在 Billing Hub 为内部计量 CRM 项目签发凭据，并创建 `PREPAID` 测试租户／项目、签发独立凭据。
-2. 本项目在 VPS 运行环境配置两个独立客户端绑定，启动 API 与 worker，才可进行双路径真实联调。
+1. Kelvin 在 Billing Hub 为内部计量 CRM 项目签发凭据。
+2. Kelvin 在 Billing Hub 创建 `PREPAID` 测试租户和项目，并签发独立凭据。
+3. Billing Hub 配好 Anthropic 模型目录、`LLM_TOKEN` 供应商价格和参考客户售价；否则第一笔用量会报 `MODEL_UNKNOWN` 或 `PRICING_ERROR`。这是 Billing Hub 侧准备，不是本项目的设计待决项。
+4. 部署：GitHub 公开仓库已建（2026-10-09）；已定直接使用部署工作流，合并到 `main` 后按提交 SHA 部署，并使用 VPS 共享 MySQL 中的独立库。部署设计和工作流另行完成，不在本文展开。
+5. 在 VPS 运行环境配置两个独立客户端绑定，启动 API 和 worker。
 
 Billing Hub 的目录／价格、ADMIN 权限及中心告警属跨项目准备，不列入本项目设计待决项。
 
@@ -128,7 +129,7 @@ Billing Hub 的目录／价格、ADMIN 权限及中心告警属跨项目准备�
 1. CRM 批准的 `contact_snapshot` 字段、个人数据审查、输入上限与 `context_text` 迁移；员工与对象权限由 CRM 验收。
 2. 请求级幂等键的格式／保留期限、409 响应体、进行中／结果未知处理；CRM 如何保存首次摘要与 `request_id` 映射。
 3. 客户端／能力限流阈值、outbox 容量和重试上限；本地版本化状态、webhook 接收与周期对账须等 Billing Hub 状态同步设计闸门，本项目不预定版本应用和解除规则。
-4. VPS 上 API／worker 的运维职责和数据库位置；Billing Hub 新的项目凭据级最终计价查询契约与 AI API 核对频率；供应商能否提供准确逐请求用量；本地记录保留／清理期限、可审计死信重投与告警升级时限。
+4. VPS 上 API／worker 的运维职责；Billing Hub 新的项目凭据级最终计价查询契约与 AI API 核对频率；供应商能否提供准确逐请求用量；本地记录保留／清理期限、可审计死信重投与告警升级时限。
 
 ### 以后再说
 
