@@ -24,7 +24,7 @@
 
 **现状（代码已实现）：**`app/main.py:create_app.invoke` 每次 HTTP 请求进入 `app/service.py:run_capability`，生成新 `request_id`、新模型调用和新 `event_id`。现有 Billing Hub `event_id` 幂等只保护同一用量事件的重复投递。
 
-**缺口或提议：**2026-10-09 Kelvin 评审后修改：正式多租户阶段，AI API 仅按（已鉴权 `client_id`、能力名、幂等键）保存状态、原 `request_id`、`event_id` 及规范化请求摘要的哈希，**不保存摘要正文或联系人内容**。同键同内容已完成：提议返回 409、附原 `request_id`，不调模型、不新增用量；进行中：提议 409 `REQUEST_IN_PROGRESS`、附原 `request_id`。同键不同内容选择 409 `IDEMPOTENCY_CONFLICT`，理由是键已被另一请求占用，属于资源冲突而非 JSON 字段格式错误。CRM 自己保存首次正文及 `request_id` 映射。若首次响应在网络中丢失，员工用新幂等键再发会重新生成，可能多一次 token 费用；内部计量租户钱包实扣仍为 0。内部联调可选做，本地演示不以此为验收项。
+**缺口或提议：**2026-10-09 Kelvin 评审后修改：正式多租户阶段，AI API 仅按（已鉴权 `client_id`、能力名、幂等键）保存状态、原 `request_id`、`event_id` 及规范化请求摘要的哈希，**不保存摘要正文或联系人内容**。同键同内容已完成：提议返回 409、附原 `request_id`，不调模型、不新增用量；进行中：提议 409 `REQUEST_IN_PROGRESS`、附原 `request_id`。同键不同内容选择 409 `IDEMPOTENCY_CONFLICT`，理由是键已被另一请求占用，属于资源冲突而非 JSON 字段格式错误。CRM 只在审计记录中保存 `request_id`，不保存摘要正文（2026-10-09 Kelvin，见 [REQUIREMENTS.md](REQUIREMENTS.md) 第一轮决定）。若首次响应在网络中丢失，员工用新幂等键再发会重新生成，可能多一次 token 费用；内部计量租户钱包实扣仍为 0。内部联调可选做，本地演示不以此为验收项。
 
 ## 4. Outbox 状态机
 
@@ -127,7 +127,7 @@ Billing Hub 的目录／价格、ADMIN 权限及中心告警属跨项目准备�
 ### 正式多租户上线前
 
 1. CRM 批准的 `contact_snapshot` 字段、个人数据审查、输入上限与 `context_text` 迁移；员工与对象权限由 CRM 验收。
-2. 请求级幂等键的格式／保留期限、409 响应体、进行中／结果未知处理；CRM 如何保存首次摘要与 `request_id` 映射。
+2. 请求级幂等键的格式／保留期限、409 响应体、进行中／结果未知处理；CRM 不存摘要正文（2026-10-09 Kelvin），同键同内容的 409 只能带回原 `request_id`，员工要看摘要须用新键重新生成。
 3. 客户端／能力限流阈值、outbox 容量和重试上限；本地版本化状态、webhook 接收与周期对账须等 Billing Hub 状态同步设计闸门，本项目不预定版本应用和解除规则。
 4. VPS 上 API／worker 的运维职责；Billing Hub 新的项目凭据级最终计价查询契约与 AI API 核对频率；供应商能否提供准确逐请求用量；本地记录保留／清理期限、可审计死信重投与告警升级时限。
 
