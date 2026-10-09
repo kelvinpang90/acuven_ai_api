@@ -38,7 +38,7 @@
 
 整份请求的暂定上限为 20 KiB；超长、非法版本或额外顶层字段在调用模型前返回 422。目标 200 响应含 `schema_version="1.0"`、`request_id`、原样 `contact_ref`、`summary`（1–600 字符）、`suggested_next_step`（0–240 字符）和供应商实际 `model`。缺事实时说明缺口，不声称已修改业务记录。
 
-现状 `app/main.py:CapabilityRequest` 只收 1–12000 字符的 `context_text`；响应只有 `request_id/text/model`。`app/service.py:run_capability` 把该文本作为不可信上下文发给模型。结构化 v1 拟替代它；迁移窗口待定。
+2026-10-10 起 `crm.contact_summary` 只收结构化 v1（直接替换，旧 `context_text` 请求 422）；其他四个能力仍收 1–12000 字符的 `context_text`。
 
 **2026-10-09 Kelvin 评审后修改：请求级幂等放在正式多租户档，内部联调可选做。**AI API 对已鉴权 `client_id`、能力名、幂等键保存状态、原 `request_id`、`event_id` 和规范化请求摘要的哈希；不保存摘要正文或联系人内容。已完成的同键同内容请求返回 409 和原 `request_id`，不再调用模型或生成用量；同键不同内容也返回 409，具体错误码见计费设计。CRM 只在审计记录中保存 `request_id`，不保存摘要正文（见下文第一轮决定）。若首次响应在网络中丢失，员工须以新幂等键重新发起，可能多产生一次 token 费用；内部计量租户的钱包实扣仍为 0。
 

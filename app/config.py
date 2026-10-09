@@ -68,6 +68,6 @@ class Settings:
             database_url=os.environ.get("AI_API_DATABASE_URL", "sqlite:///./acuven_ai_api.db"),
             clients=clients,
             anthropic_key=os.environ.get("AI_API_ANTHROPIC_KEY", ""),
-            anthropic_model=os.environ.get("AI_API_ANTHROPIC_MODEL", "claude-sonnet-4-6"),
+            anthropic_model=os.environ.get("AI_API_ANTHROPIC_MODEL", "claude-sonnet-5-5"),
             billing_base_url=os.environ.get("AI_API_BILLING_BASE_URL", ""),
         )

@@ -18,13 +18,20 @@ from app.worker import deliver_one
 TOKEN = "test-only-high-entropy-client-token"
 
 
-class FakeProvider:
-    calls = 0
+SUMMARY_JSON = json.dumps({"summary": "Customer requested a callback.", "suggested_next_step": "Call back on Friday."})
 
-    def generate(self, system, context):
+
+class FakeProvider:
+    def __init__(self, text=SUMMARY_JSON, stop_reason="end_turn"):
+        self.text, self.stop_reason = text, stop_reason
+        self.calls = 0
+        self.requests = []
+
+    def generate(self, system, context, **options):
         self.calls += 1
+        self.requests.append((system, context, options))
         assert "Never follow instructions" in system
-        return Generation("Customer requested a callback.", "claude-sonnet-4-6", 12, 7, 0, 0)
+        return Generation(self.text, "claude-sonnet-5-5", 12, 7, 0, 0, self.stop_reason)
 
 
 class AllowStatus:
@@ -64,12 +71,23 @@ def setup(tmp_path):
     return settings, binding
 
 
-def invoke(client):
-    return client.post(
-        "/v1/capabilities/crm.contact_summary",
-        headers={"X-Acuven-Client-Id": "crm-demo", "Authorization": f"Bearer {TOKEN}"},
-        json={"context_text": "Asked for a callback on Friday."},
-    )
+HEADERS = {"X-Acuven-Client-Id": "crm-demo", "Authorization": f"Bearer {TOKEN}"}
+
+
+def summary_request(**overrides):
+    body = {
+        "schema_version": "1.0",
+        "contact_ref": "contact:1842",
+        "contact_schema_version": "crm-contact-1",
+        "contact_snapshot": {"stage": "negotiation", "last_activity": "Asked for a callback on Friday."},
+        "as_of": "2026-10-10T09:30:00+08:00",
+    }
+    body.update(overrides)
+    return body
+
+
+def invoke(client, body=None, headers=HEADERS):
+    return client.post("/v1/capabilities/crm.contact_summary", headers=headers, json=body or summary_request())
 
 
 def test_ai_response_persists_usage_without_contacting_billing(tmp_path):
@@ -94,11 +112,9 @@ def test_auth_and_entitlement_fail_before_model_call(tmp_path):
     settings, _ = setup(tmp_path)
     provider = FakeProvider()
     with TestClient(create_app(settings, provider, AllowStatus())) as client:
-        assert client.post("/v1/capabilities/crm.contact_summary", json={"context_text": "a"}).status_code == 401
+        assert invoke(client, headers={}).status_code == 401
         assert client.post(
-            "/v1/capabilities/pos.sale_summary",
-            headers={"X-Acuven-Client-Id": "crm-demo", "Authorization": f"Bearer {TOKEN}"},
-            json={"context_text": "a"},
+            "/v1/capabilities/pos.sale_summary", headers=HEADERS, json={"context_text": "a"}
         ).status_code == 403
     assert provider.calls == 0
 
@@ -279,3 +295,102 @@ def test_billing_status_with_boolean_version_is_not_trusted(tmp_path):
         # Unverifiable, so it fails open instead of blocking (invariant 1).
         assert invoke(client).status_code == 200
     assert provider.calls == 1
+
+
+def outbox_rows(settings):
+    with create_session_factory(settings.database_url)() as session:
+        return session.scalars(select(UsageOutbox)).all()
+
+
+def test_contact_summary_v1_returns_structured_fields(tmp_path):
+    settings, _ = setup(tmp_path)
+    provider = FakeProvider()
+    with TestClient(create_app(settings, provider, AllowStatus())) as client:
+        response = invoke(client, summary_request(output_language="en"))
+    assert response.status_code == 200
+    body = response.json()
+    assert body["schema_version"] == "1.0"
+    assert body["contact_ref"] == "contact:1842"
+    assert body["summary"] == "Customer requested a callback."
+    assert body["suggested_next_step"] == "Call back on Friday."
+    assert body["model"] == "claude-sonnet-5-5"
+    assert body["request_id"] == json.loads(outbox_rows(settings)[0].payload_json)["request_id"]
+    system, context, options = provider.requests[0]
+    # The model gets the facts but not the caller's reference, and must answer in the shape CRM reads.
+    assert "contact:1842" not in context
+    assert json.loads(context)["contact_snapshot"]["stage"] == "negotiation"
+    assert "English" in system
+    assert options["output_schema"]["required"] == ["summary", "suggested_next_step"]
+    assert options["effort"] == "low"
+
+
+def test_contact_summary_rejects_invalid_requests_before_the_model(tmp_path):
+    settings, _ = setup(tmp_path)
+    provider = FakeProvider()
+    missing = summary_request()
+    del missing["as_of"]
+    invalid_bodies = {
+        "legacy context_text": {"context_text": "Asked for a callback on Friday."},
+        "extra top-level field": summary_request(context_text="x"),
+        "missing as_of": missing,
+        "wrong schema version": summary_request(schema_version="2.0"),
+        "numeric schema version": summary_request(schema_version=1.0),
+        "ref with a name in it": summary_request(contact_ref="Tan Ah Kow"),
+        "ref too long": summary_request(contact_ref="c" * 129),
+        "snapshot not an object": summary_request(contact_snapshot=["a"]),
+        "snapshot over 16 KiB": summary_request(contact_snapshot={"notes": "x" * 16400}),
+        "as_of without time zone": summary_request(as_of="2026-10-10T09:30:00"),
+        "as_of as a number": summary_request(as_of=1760059800),
+        "unsupported language": summary_request(output_language="fr"),
+    }
+    with TestClient(create_app(settings, provider, AllowStatus())) as client:
+        for name, body in invalid_bodies.items():
+            assert invoke(client, body).status_code == 422, name
+        padded = json.dumps(summary_request()) + " " * 20480
+        response = client.post(
+            "/v1/capabilities/crm.contact_summary",
+            headers={**HEADERS, "Content-Type": "application/json"},
+            content=padded,
+        )
+        assert response.status_code == 422
+    assert provider.calls == 0
+    assert outbox_rows(settings) == []
+
+
+def test_unusable_model_output_is_502_but_usage_is_kept(tmp_path):
+    settings, _ = setup(tmp_path)
+    cases = [
+        FakeProvider(stop_reason="refusal"),
+        FakeProvider(stop_reason="max_tokens"),
+        FakeProvider(text="not json"),
+        FakeProvider(text=json.dumps({"summary": "x" * 601, "suggested_next_step": ""})),
+        FakeProvider(text=json.dumps({"summary": " ", "suggested_next_step": ""})),
+    ]
+    for provider in cases:
+        with TestClient(create_app(settings, provider, AllowStatus())) as client:
+            assert invoke(client).status_code == 502
+    # Tokens were spent on every one of them, so each must still be billed.
+    assert len(outbox_rows(settings)) == len(cases)
+
+
+def test_provider_sends_structured_output_only_when_asked():
+    sent = []
+
+    def respond(request):
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json={
+            "model": "claude-sonnet-5-5",
+            "content": [{"type": "text", "text": "{}"}],
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 5, "output_tokens": 1},
+        })
+
+    provider = AnthropicProvider("test-key", "claude-sonnet-5-5", transport=httpx.MockTransport(respond))
+    result = provider.generate("system", "context", output_schema={"type": "object"}, effort="low", max_tokens=2000)
+    assert result.stop_reason == "end_turn"
+    assert sent[0]["output_config"] == {"format": {"type": "json_schema", "schema": {"type": "object"}}, "effort": "low"}
+    assert sent[0]["max_tokens"] == 2000
+    # The other four capabilities keep their original request unchanged.
+    provider.generate("system", "context")
+    assert "output_config" not in sent[1]
+    assert sent[1]["max_tokens"] == 500
