@@ -1,6 +1,6 @@
 # `crm.contact_summary` 结构化契约 v1
 
-状态：待 Kelvin 批准；批准前不实现。底稿是 [REQUIREMENTS.md](REQUIREMENTS.md)「第一批能力」的目标契约 v1，本文定稿后取代它。
+状态：2026-10-10 Kelvin 批准；尚未实现。底稿是 [REQUIREMENTS.md](REQUIREMENTS.md)「第一批能力」的目标契约 v1，本文定稿后取代它。
 
 ## 已定输入（2026-10-09 / 10 Kelvin）
 
