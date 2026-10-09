@@ -79,7 +79,7 @@
 
 **`PREPAID` 测试路径：**Kelvin 在 Billing Hub 创建测试租户、项目并签发独立凭据；本项目配置第二个客户端绑定，与内部路径隔离，凭据只放运行环境。计费平台离线时 Claude 仍能回复、用量落本地，恢复后补投积压；同一事件重复投递钱包只扣一次。余额停机返回经校验的 `BLOCK_AI` 后不再发起模型调用，复机返回经校验的 `ALLOW_AI` 后恢复；Billing Hub 侧记录每次停机时的余额和透支额，供 ADR-0010 评估。查询失败或应答无法校验时仍放行。
 
-两路离线演练仅在 AI API 一侧制造 Billing Hub 不可达，例如临时将 AI API 运行环境的计费地址指向不可达地址，或在 AI API 容器层阻断出站；验证后恢复配置，不得停止、重启或改动生产 Billing Hub。
+两路离线演练仅在 AI API 一侧制造 Billing Hub 不可达，方法是临时将 AI API 运行环境的计费地址指向不可达地址（步骤见 [DEPLOYMENT.md](DEPLOYMENT.md#离线演练)）；验证后恢复配置，不得停止、重启或改动生产 Billing Hub。
 
 两条路径都通过，Billing Hub 第 3 阶段试点才算成功；内部计量租户钱包实扣 0，不能替代 `PREPAID` 的扣费、余额停机和复机验收。
 
@@ -93,6 +93,6 @@
 
 ## 技术栈与部署
 
-沿用 Python 3.12、FastAPI、SQLAlchemy；试点和正式环境用 VPS 共享 MySQL 中的独立库，SQLite 只供本地演示和测试。API 与 outbox worker 独立运行。部署方式已定为工作流：合并到 `main` 后按提交 SHA 部署；部署设计与工作流另行完成，本文不授权实际部署。
+沿用 Python 3.12、FastAPI、SQLAlchemy；试点和正式环境用 VPS 共享 MySQL 中的独立库，SQLite 只供本地演示和测试。API 与 outbox worker 独立运行。部署方式已定为工作流：合并到 `main` 后按提交 SHA 部署；部署设计见 [DEPLOYMENT.md](DEPLOYMENT.md)，部署工作流另行实现；本文不授权实际部署。
 
 唯一待决清单见 [BILLING_DESIGN.md：待 Kelvin 决定](BILLING_DESIGN.md#待-kelvin-决定)。

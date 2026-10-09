@@ -36,7 +36,8 @@ GitHub 公开仓库已建（2026-10-09）。2026-10-09 Kelvin 决定本项目登
 - [ ] Kelvin 在 Billing Hub 后台给内部计量 CRM 项目签发集成凭据；secret 只显示一次，直接放进本服务运行环境的 `AI_API_CLIENTS_JSON`，不经过聊天、不写进仓库；网店项目待能力契约确定后再签发
 - [ ] 在 Billing Hub 后台配置 Anthropic 模型目录、`LLM_TOKEN` 供应商价格与参考客户定价；否则用量上报后会计价失败（`MODEL_UNKNOWN` / `PRICING_ERROR`）
 - [x] 2026-10-09 Kelvin 确定本服务部署位置为 VPS
-- [ ] 完成部署设计与部署工作流，使用 VPS 共享 MySQL 中的独立库；合并到 `main` 后按提交 SHA 部署
+- [x] 2026-10-09 部署设计定稿（[DEPLOYMENT.md](DEPLOYMENT.md)）：VPS 共享 MySQL 中的独立库，试点沿用 `create_all`，CI 加 MySQL 必需检查
+- [ ] 实现部署工作流：合并到 `main` 后按提交 SHA 部署
 - [ ] 按 VPS 部署位置配齐环境变量并启动 API 与 worker
 - [ ] Kelvin 在 Billing Hub 创建 `PREPAID` 测试租户、项目并签发独立凭据；本服务在运行环境配置第二客户端绑定，用于钱包扣费、余额停机／复机及 ADR-0010 透支额验收
 - [ ] `acuven-crm`：用现有 `crm.contact_summary` 打通第一条真实链路，核对预计供应商成本、参考售价、钱包实扣 0，以及管理员停用后被拦
