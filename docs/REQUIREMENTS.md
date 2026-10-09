@@ -93,6 +93,6 @@
 
 ## 技术栈与部署
 
-沿用 Python 3.12、FastAPI、SQLAlchemy；试点和正式环境用 VPS 共享 MySQL 中的独立库，SQLite 只供本地演示和测试。API 与 outbox worker 独立运行。部署方式已定为工作流：合并到 `main` 后按提交 SHA 部署；部署设计与工作流另行完成，本文不授权实际部署。
+沿用 Python 3.12、FastAPI、SQLAlchemy；试点和正式环境用 VPS 共享 MySQL 中的独立库，SQLite 只供本地演示和测试。API 与 outbox worker 独立运行。部署方式已定为工作流：合并到 `main` 后按提交 SHA 部署；部署设计见 [DEPLOYMENT.md](DEPLOYMENT.md)，部署工作流另行实现；本文不授权实际部署。
 
 唯一待决清单见 [BILLING_DESIGN.md：待 Kelvin 决定](BILLING_DESIGN.md#待-kelvin-决定)。

@@ -1,4 +1,4 @@
-# 部署设计（待 Kelvin 批准）
+# 部署设计
 
 范围：Billing Hub 第 3 阶段试点（内部计量与 `PREPAID` 两路）的 VPS 部署。正式多租户的迁移、备份恢复、告警与容量另行验收。本文不写主机名、IP、域名、路径或密钥；这些只在 GitHub secrets 和 VPS 运行环境里。
 
@@ -6,6 +6,8 @@
 
 - 部署在 VPS 共享栈；合并到 `main` 后由部署工作流按提交 SHA 自动部署。
 - 数据库用共享 MySQL 中的独立库。
+- 表结构试点沿用 `create_all`；任何表结构变更之前先引入 Alembic。
+- CI 加 `mysql:8.0` 服务容器的 job，并设为 `main` 的必需检查。
 - AI API **只在内网访问**：无域名、无 nginx 配置、不发布宿主机端口。
 - Billing Hub 走其**公网 HTTPS** 地址。
 - 仓库公开。
@@ -37,10 +39,8 @@ VPS 上部署目录里的 `.env`（`chmod 600`，不进仓库，由 Kelvin 写�
 ## 数据库
 
 - 用 `vps_infra/scripts/provision-project.sh acuven_ai_api <redis起始号>` 建库 `acuven_ai_api` 和用户 `acuven_ai_api_app`。本项目不用 Redis，但脚本必须传这个参数，它只打印、不分配；脚本打印的是 `aiomysql` 连接串，本项目用同步的 `pymysql`，按上表改写。
-- **表结构（待决 1）**：现有代码在启动时 `create_all`，只会建表、不会改表。试点只有 `usage_outbox` 一张表。
-  - 推荐：试点沿用 `create_all`；规定**任何表结构变更之前先引入 Alembic**，以 `stamp` 对齐已有表，`deploy/deploy.sh` 届时加迁移步骤。
-  - 备选：现在就引入 Alembic 和基线迁移（与 `acuven-shop` 一致，多一套迁移代码要维护）。
-- **MySQL 兼容（待决 2）**：现有测试只跑 SQLite。`DateTime(timezone=True)` 在 MySQL 是不带时区的 `DATETIME`；共享 MySQL 的会话时区是 `+00:00`、代码全用 UTC，按理可用，但未验证。推荐在 CI 加一个 `mysql:8.0` 服务容器的 job，用同一套测试跑一遍（测试读 `AI_API_TEST_DATABASE_URL`，缺省仍用 SQLite），并设为 `main` 的必需检查。
+- **表结构（已定）**：试点沿用启动时的 `create_all`，它只会建表、不会改表；试点只有 `usage_outbox` 一张表。**任何表结构变更之前先引入 Alembic**，以 `stamp` 对齐已有表，`deploy/deploy.sh` 届时加迁移步骤；这条变更本身需单独评审。
+- **MySQL 兼容（已定）**：现有测试只跑 SQLite。`DateTime(timezone=True)` 在 MySQL 是不带时区的 `DATETIME`；共享 MySQL 的会话时区是 `+00:00`、代码全用 UTC，按理可用，但未验证。CI 加一个 `mysql:8.0` 服务容器的 job `tests-mysql`，用同一套测试跑一遍（测试读 `AI_API_TEST_DATABASE_URL`，缺省仍用 SQLite）。Kelvin 在 GitHub 分支保护里把 `tests-mysql` 加为 `main` 的必需检查（与现有 `tests` 并列）。
 
 ## 镜像与健康检查
 
@@ -96,16 +96,12 @@ AI_API_IMAGE="$(docker compose ps --format '{{.Image}}' ai_api)" docker compose 
 ## 风险
 
 - **Cloudflare 拦截**：Billing Hub 公网地址走 Cloudflare 代理，可能对非浏览器请求发起挑战。若出现，状态查询会按「应答无法校验」放行（不中断服务），但用量投递会失败。首次部署后第一件事是看 worker 日志和一次状态查询的结果。
-- **`create_all` 不改表**：见待决 1；违反「先引入 Alembic」的规定就会在部署后才暴露问题。
+- **`create_all` 不改表**：见「数据库」；违反「先引入 Alembic」的规定就会在部署后才暴露问题。
 - **共享 VPS**：两个容器有内存上限；镜像只清理带本项目标签的。
 
-## 待 Kelvin 决定
+## 实施（批准后，一个分支一个 PR）
 
-1. 表结构：试点沿用 `create_all`、表结构变更前再引入 Alembic（推荐），还是现在就引入。
-2. 是否加 MySQL 的 CI job 并设为必需检查（推荐加）。
-
-## 实施拆分（批准后）
-
-1. **代码 PR**：`/health` 返回 SHA、worker 心跳、`Dockerfile` 的 `GIT_SHA`、测试可切换数据库、MySQL CI job。可在 CI 里完整验证。
-2. **部署 PR**：`docker-compose.yml`、`deploy/deploy.sh`、`.github/workflows/deploy.yml`、`.env.example` 更新。合并即触发首次部署；在 secrets 和 `.env` 就绪之前，部署失败是预期的。
-3. **OpenClaw 接手准备**另做：`.platform/` 三个文件、planning-v1、`contract_check`。
+- 代码：`/health` 返回 SHA、worker 心跳、`Dockerfile` 的 `GIT_SHA`、测试可切换数据库、`tests-mysql` CI job。
+- 部署：`deploy/` 下的 compose 与 `deploy.sh`、`.github/workflows/deploy.yml`、`.env.example` 更新。
+- OpenClaw 接手准备：`.platform/` 三个文件、planning-v1，以及供 Worker 沙箱用的纯逻辑测试（不依赖 `TestClient`）。
+- 合并即触发首次生产部署。合并前确认 secrets 已配、VPS 上 `.env` 已就绪；否则首次部署失败是预期的。
