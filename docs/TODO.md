@@ -34,7 +34,7 @@ GitHub 公开仓库已建（2026-10-09）。2026-10-09 Kelvin 决定本项目登
 
 - [ ] 本项目：补 `.platform/` 契约与部署工作流；合并后在控制面仓库另开会话登记
 - [x] 本项目：`crm.contact_summary` 结构化契约 v1 定稿（2026-10-10 Kelvin 批准，[CONTACT_SUMMARY_V1.md](CONTACT_SUMMARY_V1.md)）并实现；crm_os 的 AI 接入以此为前置。真实模型调用待部署后验证
-- [ ] 本项目：`status_version` 改为严格整数校验（见 [BILLING_DESIGN.md](BILLING_DESIGN.md)「冲突与差异」第 2 条）
+- [x] 本项目：`status_version` 改为严格整数校验（见 [BILLING_DESIGN.md](BILLING_DESIGN.md)「冲突与差异」第 2 条；2026-10-10 随部署工作流 PR 完成）
 - [ ] crm_os：公开注册与按 id 接口越权修复，与 AI 接入并行
 - [ ] crm_os：客户摘要接入（对象级权限检查、审计记录、超时与降级、界面入口），v1 契约批准后进行
 - [ ] 评测集：从真实 CRM 取 20–30 个客户，不进仓库；Kelvin 人工打分认可后上线
