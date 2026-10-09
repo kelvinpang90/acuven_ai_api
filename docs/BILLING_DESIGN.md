@@ -108,7 +108,7 @@
 ## 冲突与差异
 
 1. **查询故障规则（历史）：**Billing Hub PR 238 已修正 `origin/main:docs/api.md` 的“失败时停止调用”旧句；现行接口契约与 `REQ-AVAIL-001` 一致，查询失败或应答无法校验时放行。
-2. **代码与设计要求：**`app/billing.py:BillingClient.allows_ai` 用 `isinstance(value, int)` 校验 `status_version`，会接受布尔值；设计要求严格整数，需后续实现。
+2. **代码与设计要求（2026-10-10 已解决）：**原先 `isinstance(value, int)` 会接受布尔值；现由 `app/billing_rules.py:status_allows_ai` 以 `type(value) is int` 严格校验，布尔值按应答无法校验处理。
 3. **用量确认层次：**本地 `DELIVERED` 对应 Billing Hub 持久接收，不等于计价完成。内部档用现有 ADMIN 查询与健康告警人工核对；正式多租户自动核对依赖未来新契约。
 4. **答复与 outbox 顺序：**Billing Hub 架构摘要的图示先画 AI 答复再画 outbox；本项目代码及本次要求为先提交 outbox 再返回。以可验证的本项目持久用量要求为准，摘要图不作为执行顺序契约。
 
