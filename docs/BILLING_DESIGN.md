@@ -127,7 +127,7 @@ Billing Hub 的目录／价格、ADMIN 权限及中心告警属跨项目准备�
 
 ### 正式多租户上线前
 
-1. CRM 批准的 `contact_snapshot` 字段、个人数据审查、输入上限与 `context_text` 迁移；员工与对象权限由 CRM 验收。
+1. 个人数据审查；员工与对象权限由 CRM 验收。`contact_snapshot` 字段由 CRM 决定，输入上限与 `context_text` 迁移已在 [CONTACT_SUMMARY_V1.md](CONTACT_SUMMARY_V1.md) 定稿。
 2. 请求级幂等键的格式／保留期限、409 响应体、进行中／结果未知处理；CRM 不存摘要正文（2026-10-09 Kelvin），同键同内容的 409 只能带回原 `request_id`，员工要看摘要须用新键重新生成。
 3. 客户端／能力限流阈值、outbox 容量和重试上限；本地版本化状态、webhook 接收与周期对账须等 Billing Hub 状态同步设计闸门，本项目不预定版本应用和解除规则。
 4. VPS 上 API／worker 的运维职责；Billing Hub 新的项目凭据级最终计价查询契约与 AI API 核对频率；供应商能否提供准确逐请求用量；本地记录保留／清理期限、可审计死信重投与告警升级时限。

@@ -32,11 +32,11 @@ python -m venv .venv
 
 先配置 `.env.example` 所列环境变量；程序不会自动读取 `.env`。`AI_API_CLIENTS_JSON` 为服务端 JSON 配置，包含模块客户端的 SHA-256 token 摘要、租户与 `ai_billing_hub` 分配的项目、凭据和能力范围。真实凭据只放运行环境，不写入 Git。用 `python -c "import hashlib; print(hashlib.sha256(b'YOUR_RANDOM_TOKEN').hexdigest())"` 计算示例格式，实际 token 应由安全随机数生成。每个租户的计费凭据须与配置中的 `tenant_id`、`billing_project_id` 绑定一致。每次调用模型前实时查询 `ai_billing_hub` 的 `effective-status`：明确返回 `BLOCK_AI` 时拒绝（403）；查询失败或应答无法校验时照常放行（不变量 1：中心计费故障不得中断客户 AI 服务），用量仍写本地 outbox，恢复后补送。
 
-调用示例：
+调用示例（`crm.contact_summary` 用结构化契约 v1，见 [docs/CONTACT_SUMMARY_V1.md](docs/CONTACT_SUMMARY_V1.md)；其他四个能力仍收 `{"context_text": "..."}`）：
 
 ```powershell
 $headers = @{ Authorization = 'Bearer <client-token>'; 'X-Acuven-Client-Id' = 'crm-demo' }
-Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8010/v1/capabilities/crm.contact_summary' -Headers $headers -ContentType 'application/json' -Body '{"context_text":"客户希望下周回电。"}'
+Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8010/v1/capabilities/crm.contact_summary' -Headers $headers -ContentType 'application/json' -Body '{"schema_version":"1.0","contact_ref":"contact:1","contact_schema_version":"demo-1","contact_snapshot":{"note":"客户希望下周回电。"},"as_of":"2026-10-10T09:30:00+08:00"}'
 ```
 
 ## 计费边界

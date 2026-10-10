@@ -15,6 +15,7 @@ class Generation:
     output_tokens: int
     cache_creation_input_tokens: int
     cache_read_input_tokens: int
+    stop_reason: str | None = None
 
 
 class AnthropicProvider:
@@ -23,9 +24,30 @@ class AnthropicProvider:
         self.model = model
         self.transport = transport
 
-    def generate(self, system: str, context: str) -> Generation:
+    def generate(
+        self,
+        system: str,
+        context: str,
+        *,
+        output_schema: dict | None = None,
+        effort: str | None = None,
+        max_tokens: int = 500,
+    ) -> Generation:
         if not self.api_key:
             raise RuntimeError("AI provider is not configured")
+        body = {
+            "model": self.model,
+            "max_tokens": max_tokens,
+            "system": system,
+            "messages": [{"role": "user", "content": context}],
+        }
+        output_config = {}
+        if output_schema is not None:
+            output_config["format"] = {"type": "json_schema", "schema": output_schema}
+        if effort is not None:
+            output_config["effort"] = effort
+        if output_config:
+            body["output_config"] = output_config
         with httpx.Client(timeout=60, transport=self.transport) as client:
             response = client.post(
                 "https://api.anthropic.com/v1/messages",
@@ -34,12 +56,7 @@ class AnthropicProvider:
                     "anthropic-version": "2023-06-01",
                     "content-type": "application/json",
                 },
-                json={
-                    "model": self.model,
-                    "max_tokens": 500,
-                    "system": system,
-                    "messages": [{"role": "user", "content": context}],
-                },
+                json=body,
             )
             response.raise_for_status()
             data = response.json()
@@ -56,4 +73,5 @@ class AnthropicProvider:
             output_tokens=usage["output_tokens"],
             cache_creation_input_tokens=usage.get("cache_creation_input_tokens") or 0,
             cache_read_input_tokens=usage.get("cache_read_input_tokens") or 0,
+            stop_reason=data.get("stop_reason"),
         )
