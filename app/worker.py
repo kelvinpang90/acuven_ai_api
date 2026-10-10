@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import logging
+import tempfile
 import time
 from datetime import timedelta
+from pathlib import Path
 
 from sqlalchemy import and_, or_, select, update
 
@@ -15,6 +17,9 @@ from app.db import UsageOutbox, create_session_factory, utcnow
 from app.ids import new_ulid
 
 logger = logging.getLogger(__name__)
+
+# Touched after every loop; the container health check requires it to be fresh (docker-compose.yml).
+HEARTBEAT_PATH = Path(tempfile.gettempdir()) / "acuven_ai_api_worker_heartbeat"
 
 
 def claim_one(session_factory) -> UsageOutbox | None:
@@ -92,6 +97,7 @@ def main() -> None:
     billing = BillingClient(settings.billing_base_url)
     while True:
         worked = deliver_one(session_factory, settings, billing)
+        HEARTBEAT_PATH.touch()
         if args.once:
             return
         if not worked:

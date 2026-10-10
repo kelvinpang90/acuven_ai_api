@@ -1,14 +1,15 @@
 import hashlib
 import hmac
 import json
+import os
 
 import httpx
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import create_engine, select
 
 from app.billing import BillingClient, INGEST_PATH, STATUS_PATH
 from app.config import ClientBinding, Settings
-from app.db import UsageOutbox, create_session_factory, utcnow
+from app.db import Base, UsageOutbox, create_session_factory, utcnow
 from app.main import create_app
 from app.provider import AnthropicProvider, Generation
 from app.worker import deliver_one
@@ -31,6 +32,17 @@ class AllowStatus:
         return True
 
 
+def database_url(tmp_path):
+    """SQLite per test by default; CI's tests-mysql job points AI_API_TEST_DATABASE_URL at MySQL 8.0."""
+    url = os.environ.get("AI_API_TEST_DATABASE_URL")
+    if not url:
+        return f"sqlite:///{tmp_path / 'outbox.db'}"
+    engine = create_engine(url)
+    Base.metadata.drop_all(engine)  # every test starts from an empty outbox
+    engine.dispose()
+    return url
+
+
 def setup(tmp_path):
     binding = ClientBinding(
         client_id="crm-demo",
@@ -43,7 +55,7 @@ def setup(tmp_path):
         capabilities=frozenset({"crm.contact_summary"}),
     )
     settings = Settings(
-        database_url=f"sqlite:///{tmp_path / 'outbox.db'}",
+        database_url=database_url(tmp_path),
         clients={binding.client_id: binding},
         anthropic_key="test-key",
         anthropic_model="claude-sonnet-4-6",
@@ -241,3 +253,29 @@ def test_billing_does_not_acknowledge_wrong_receipt(tmp_path):
     assert not result.delivered
     assert result.retryable
     assert result.error_code == "INVALID_BILLING_RECEIPT"
+
+
+def test_health_reports_the_deployed_commit(tmp_path, monkeypatch):
+    # The deploy workflow only succeeds when /health names the commit it deployed.
+    monkeypatch.setenv("AI_API_GIT_SHA", "0" * 40)
+    settings, _ = setup(tmp_path)
+    with TestClient(create_app(settings, FakeProvider(), AllowStatus())) as client:
+        assert client.get("/health").json() == {"status": "ok", "version": "0" * 40}
+
+
+def test_billing_status_with_boolean_version_is_not_trusted(tmp_path):
+    settings, binding = setup(tmp_path)
+    provider = FakeProvider()
+    billing = BillingClient(
+        settings.billing_base_url,
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json={"data": {
+            "tenant_id": binding.tenant_id,
+            "project_id": binding.billing_project_id,
+            "effective_status": "BLOCK_AI",
+            "status_version": True,
+        }})),
+    )
+    with TestClient(create_app(settings, provider, billing)) as client:
+        # Unverifiable, so it fails open instead of blocking (invariant 1).
+        assert invoke(client).status_code == 200
+    assert provider.calls == 1

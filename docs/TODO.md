@@ -9,13 +9,32 @@
 
 GitHub 公开仓库已建（2026-10-09）。2026-10-09 Kelvin 决定本项目登记 OpenClaw 控制面，尚未登记；生产部署尚未建立。不要把本地演示结果写成已完成生产联调。
 
+## 规划（OpenClaw planning-v1）
+
+> 下面两个标记之间的块由 OpenClaw 控制面按固定格式解析，决定下一项任务；只管「做什么、先做什么」，执行权限仍以 `.platform/tasks.yaml` 为准。格式不对整块作废，项目 fail closed。project_id `acuven_ai_api`，任务编号 `^AIAPI-TASK-[0-9]{3}$`（2026-10-09 Kelvin 确认）。
+
+<!-- 块内每一行只能是下面三种格式之一（空行可以有，别的内容一律不行，包括注释）：
+     当前计划：`1. `<任务 id>` <标题>`，从 1 连续编号，最多 20 项；每一项都必须在 tasks.yaml 登记为 ready，第一项就是下一次「开启」的任务。
+     已阻塞：  `- `<任务 id>` <标题>｜阻塞：<原因>` 或 `- 待登记：<标题>｜阻塞：<原因>`（分隔符是全角竖线）。
+     后续计划：`- `<任务 id>` <标题>` 或 `- 待登记：<标题>`。
+     任务 id 必须符合控制面登记的 task_id_pattern，全块不重复；tasks.yaml 里每个 ready 任务都必须出现在块里。
+     「待登记」行不带 id，只给人看，不会变成可执行的东西。三个标题与两个标记逐字不改。 -->
+
+<!-- openclaw:planning-v1:begin -->
+### 当前计划
+
+### 已阻塞
+
+### 后续计划
+<!-- openclaw:planning-v1:end -->
+
 ## 第一轮 CRM 接入（2026-10-09 Kelvin 决定）
 
 决定见 [REQUIREMENTS.md](REQUIREMENTS.md)「第一轮 CRM 接入决定」。各项目的任务在各自仓库进行，本节只跟踪与本项目有关的依赖。
 
 - [ ] 本项目：补 `.platform/` 契约与部署工作流；合并后在控制面仓库另开会话登记
 - [ ] 本项目：`crm.contact_summary` 结构化契约 v1 定稿，经 Kelvin 批准后实现；crm_os 的 AI 接入以此为前置
-- [ ] 本项目：`status_version` 改为严格整数校验（见 [BILLING_DESIGN.md](BILLING_DESIGN.md)「冲突与差异」第 2 条）
+- [x] 本项目：`status_version` 改为严格整数校验（见 [BILLING_DESIGN.md](BILLING_DESIGN.md)「冲突与差异」第 2 条；2026-10-10 随部署工作流 PR 完成）
 - [ ] crm_os：公开注册与按 id 接口越权修复，与 AI 接入并行
 - [ ] crm_os：客户摘要接入（对象级权限检查、审计记录、超时与降级、界面入口），v1 契约批准后进行
 - [ ] 评测集：从真实 CRM 取 20–30 个客户，不进仓库；Kelvin 人工打分认可后上线
