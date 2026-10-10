@@ -63,6 +63,10 @@ VPS 上部署目录里的 `.env`（`chmod 600`，不进仓库，由 Kelvin 写�
 
 **需要 Kelvin 在 GitHub 配的 secrets**（名称与 `acuven-shop` 相同，值不可跨仓库复制，需要重新填）：`VPS_HOST`、`VPS_USER`、`VPS_SSH_KEY`、`VPS_PORT`、`VPS_FINGERPRINT`、`VPS_APP_DIR`。不需要 repository variables。
 
+2026-10-10 首次上线时踩到的两点：
+- 在 Windows 的 Git Bash 里用 `gh secret set VPS_APP_DIR --body /opt/...` 会被自动改写成 Windows 路径，部署时 `cd` 失败；用 PowerShell 或交互式输入设置路径类 secret。
+- `VPS_FINGERPRINT` 要用服务器 **ECDSA** 主机密钥的 SHA256 指纹（`ssh-keygen -l -f /etc/ssh/ssh_host_ecdsa_key.pub`）：`appleboy/ssh-action` v1.0.3 的 Go SSH 库优先协商 ECDSA，ed25519 排在最后。
+
 ## 试点操作
 
 **首次上线顺序（Kelvin 在 VPS 上做）：**

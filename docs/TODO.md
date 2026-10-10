@@ -7,7 +7,7 @@
 3. 正式部署前补数据库迁移、凭据轮换、限流、操作审计、死信重投与告警、供应商异常用量对账、备份恢复及部署契约。
 4. 跨系统工具、人工审批写入、BYOK、客户自托管计费与统一门户接入另立设计和验收。
 
-GitHub 公开仓库已建（2026-10-09）。2026-10-09 Kelvin 决定本项目登记 OpenClaw 控制面，尚未登记；生产部署尚未建立。不要把本地演示结果写成已完成生产联调。
+GitHub 公开仓库已建（2026-10-09）。2026-10-09 Kelvin 决定本项目登记 OpenClaw 控制面，尚未登记。2026-10-10 首次部署到 VPS 成功（只在内网，尚无客户端绑定），尚未发生真实模型调用或计费联调。不要把本地演示结果写成已完成生产联调。
 
 ## 规划（OpenClaw planning-v1）
 
@@ -32,7 +32,7 @@ GitHub 公开仓库已建（2026-10-09）。2026-10-09 Kelvin 决定本项目登
 
 决定见 [REQUIREMENTS.md](REQUIREMENTS.md)「第一轮 CRM 接入决定」。各项目的任务在各自仓库进行，本节只跟踪与本项目有关的依赖。
 
-- [ ] 本项目：补 `.platform/` 契约与部署工作流；合并后在控制面仓库另开会话登记
+- [ ] 本项目：补 `.platform/` 契约与部署工作流（2026-10-10 已合并、首次部署成功）；在控制面仓库另开会话登记（未做）
 - [x] 本项目：`crm.contact_summary` 结构化契约 v1 定稿（2026-10-10 Kelvin 批准，[CONTACT_SUMMARY_V1.md](CONTACT_SUMMARY_V1.md)）并实现；crm_os 的 AI 接入以此为前置。真实模型调用待部署后验证
 - [x] 本项目：`status_version` 改为严格整数校验（见 [BILLING_DESIGN.md](BILLING_DESIGN.md)「冲突与差异」第 2 条；2026-10-10 随部署工作流 PR 完成）
 - [ ] crm_os：公开注册与按 id 接口越权修复，与 AI 接入并行
@@ -56,8 +56,8 @@ GitHub 公开仓库已建（2026-10-09）。2026-10-09 Kelvin 决定本项目登
 - [ ] 在 Billing Hub 后台配置 Anthropic 模型目录、`LLM_TOKEN` 供应商价格与参考客户定价；否则用量上报后会计价失败（`MODEL_UNKNOWN` / `PRICING_ERROR`）
 - [x] 2026-10-09 Kelvin 确定本服务部署位置为 VPS
 - [x] 2026-10-09 部署设计定稿（[DEPLOYMENT.md](DEPLOYMENT.md)）：VPS 共享 MySQL 中的独立库，试点沿用 `create_all`，CI 加 MySQL 必需检查
-- [ ] 实现部署工作流：合并到 `main` 后按提交 SHA 部署
-- [ ] 按 VPS 部署位置配齐环境变量并启动 API 与 worker
+- [x] 实现部署工作流：合并到 `main` 后按提交 SHA 部署（2026-10-10 首次部署成功，`/health` 报出部署的 SHA）
+- [ ] 按 VPS 部署位置配齐环境变量并启动 API 与 worker（2026-10-10 已启动；`AI_API_CLIENTS_JSON` 仍为空，待签发两个客户端的 Billing Hub 凭据）
 - [ ] Kelvin 在 Billing Hub 创建 `PREPAID` 测试租户、项目并签发独立凭据；本服务在运行环境配置第二客户端绑定，用于钱包扣费、余额停机／复机及 ADR-0010 透支额验收
 - [ ] `acuven-crm`：用现有 `crm.contact_summary` 打通第一条真实链路，核对预计供应商成本、参考售价、钱包实扣 0，以及管理员停用后被拦
 - [ ] `acuven-shop-customer-service`：先定义客服能力。现有 `shop.order_summary` 只是订单摘要、不是对话，网店本身也还没有客服功能
