@@ -89,6 +89,63 @@ export AI_API_IMAGE="$(docker inspect --format '{{.Config.Image}}' acuven_ai_api
 
 **查死信**：`docker compose logs ai_api_worker` 里搜 `requires intervention`；或在 MySQL 里按 `status` 统计 `usage_outbox`。
 
+### 死信人工重投（试点）
+
+试点没有重投工具和告警（正式阶段另定，见 [BILLING_DESIGN.md](BILLING_DESIGN.md) 第 6 节）。重投把 `DEAD` 改回 `PENDING`，worker 沿用原 `event_id` 和原 body、换新的签名请求 ID 重发；Billing Hub 按 `event_id` 去重，重复发出最多一次财务效果。
+
+**先修原因，再重投。**按 Billing Hub `docs/api.md` 摄取端点的错误表，只有下面三种错误码修好后可以重投：
+
+| `last_error` | 常见原因 | 先做什么 |
+| --- | --- | --- |
+| `INTEGRATION_AUTH_FAILED` | 凭据填错、版本号不对、已吊销，或服务器时钟偏差 | 改 `.env` 里的绑定并重建容器 |
+| `INVALID_BILLING_RESPONSE` | 应答不是 JSON，例如 Cloudflare 挑战页 | 先确认一次状态查询能正常返回 |
+| `CLIENT_BINDING_MISSING` | worker 的 `AI_API_CLIENTS_JSON` 里没有这个 `client_id` | 补回绑定并重建容器 |
+
+其他错误码**不重投**，记下 `event_id` 和错误码报给 Kelvin：`CREDENTIAL_SCOPE_MISMATCH`（载荷里的租户和项目在入 outbox 时已定，改绑定不能纠正，重投只会再失败）、`IDEMPOTENCY_CONFLICT`、`VALIDATION_ERROR` 等 422、`PAYLOAD_TOO_LARGE`、`INVALID_LOCAL_EVENT`，以及表里没有的码。
+
+列出死信（在部署目录里，先按上文设好 `AI_API_IMAGE`）：
+
+```bash
+docker compose exec -T ai_api_worker python - <<'EOF'
+import json, os
+from sqlalchemy import select
+from app.db import UsageOutbox, create_session_factory
+S = create_session_factory(os.environ["AI_API_DATABASE_URL"])
+with S() as s:
+    for r in s.scalars(select(UsageOutbox).where(UsageOutbox.status == "DEAD").order_by(UsageOutbox.id)):
+        try:
+            request_id = json.loads(r.payload_json).get("request_id")
+        except (ValueError, AttributeError):
+            request_id = None
+        print(r.event_id, request_id, r.client_id, r.attempts, r.last_error)
+EOF
+```
+
+重投指定事件（`event_id` 作为参数）。只改仍是 `DEAD` 且错误码在上表里的行，其余的不动，输出改了几行：
+
+```bash
+docker compose exec -T ai_api_worker python - <event_id> [<event_id> ...] <<'EOF'
+import os, sys
+from sqlalchemy import update
+from app.db import UsageOutbox, create_session_factory, utcnow
+REQUEUE_AFTER_FIX = {"INTEGRATION_AUTH_FAILED", "INVALID_BILLING_RESPONSE", "CLIENT_BINDING_MISSING"}
+S = create_session_factory(os.environ["AI_API_DATABASE_URL"])
+with S.begin() as s:
+    changed = s.execute(
+        update(UsageOutbox)
+        .where(
+            UsageOutbox.event_id.in_(sys.argv[1:]),
+            UsageOutbox.status == "DEAD",
+            UsageOutbox.last_error.in_(REQUEUE_AFTER_FIX),
+        )
+        .values(status="PENDING", next_attempt_at=utcnow())
+    ).rowcount
+print(f"requeued {changed} of {len(sys.argv) - 1}")
+EOF
+```
+
+然后看 worker 日志，再列一次死信，确认这些事件不在里面了；再到 Billing Hub 后台按列表里的 `request_id` 筛选（后台不能按 `event_id` 筛），核对每个事件只出现一次。在 [TODO.md](TODO.md) 的联调记录里写下 `event_id`、错误码、原因和处理时间，不写凭据。
+
 ### 离线演练
 
 已批准的计费设计原本允许两种方法，这里只保留第一种：
