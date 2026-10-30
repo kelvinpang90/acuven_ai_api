@@ -1,5 +1,15 @@
 # acuven_ai_api
 
+> **已归档：本仓库只读，不再开发。**
+>
+> 本服务已于 2026-10-13～18 并入 [`ai_billing_hub`](https://github.com/kelvinpang90/ai_billing_hub)，成为同一进程里的 AI 模块：代码在 [`app/ai_api/`](https://github.com/kelvinpang90/ai_billing_hub/tree/main/app/ai_api)，对外只有一个通用调用接口 `POST /v1/messages`（带必填的功能标签 `feature`）。提示词、输入输出格式、质量评测都放在调用方（如 CRM），不再由 AI 服务按能力定义。
+>
+> 依据：`acuven_hub/DECISIONS.md` 的 E-17～E-20，以及 `ai_billing_hub` 的 [ADR-0012](https://github.com/kelvinpang90/ai_billing_hub/blob/main/docs/adr/ADR-0012-ai-module-in-billing-process.md)。ADR-0012 定本仓库的服务及其 VPS 容器下线。
+>
+> 以下正文是**归档前的描述**，未改动。其中描述“当前”状态的句子已过期，例如“尚未连接真实业务模块或生产计费账户”（`acuven_crm_demo` 的 AI 功能已经通过 `ai_billing_hub` 调用模型）、“当前接口”里的 `POST /v1/capabilities/{capability}` 与五个能力（已改为通用接口）、“合并到 `main` 后按提交 SHA 部署”，以及“当前交付边界”一节；以 `ai_billing_hub` 的文档为准。
+
+---
+
 独立的系统侧 AI API。CRM、ERP、网店、Inventory 和 POS 通过各自后端调用；面向顾客的 AI Chatbot 保持独立。当前交付的是**只读 AI 能力与计费接入的第一条可运行链路**，尚未连接真实业务模块或生产计费账户。
 
 ## 当前接口
